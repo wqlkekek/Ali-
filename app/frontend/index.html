@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>电商自动化工作流控制台</title>
+  <style>
+    :root { --bg:#f5f7fb; --card:#fff; --line:#dbe3f0; --primary:#2364ff; --text:#1e2430; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif; }
+    .container { max-width: 1200px; margin: 24px auto; padding: 0 16px 32px; }
+    h1 { margin:0 0 8px; }
+    .desc { margin:0 0 24px; color:#4b5b77; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(320px,1fr)); gap:16px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; box-shadow:0 2px 8px rgba(9,30,66,.04); }
+    .card h2 { font-size:18px; margin:0 0 12px; }
+    label { display:block; font-size:13px; margin-bottom:6px; color:#3d4a61; }
+    input, textarea { width:100%; box-sizing:border-box; border:1px solid #c8d4ea; border-radius:8px; padding:9px 10px; margin-bottom:10px; background:#fff; }
+    textarea { min-height:80px; resize:vertical; }
+    button { background:var(--primary); color:#fff; border:0; border-radius:8px; padding:10px 14px; cursor:pointer; }
+    button.secondary { background:#4a5880; }
+    .line { display:flex; gap:8px; flex-wrap:wrap; }
+    .meta { font-size:13px; color:#586784; margin-top:6px; }
+    pre { background:#0f1728; color:#e6ecff; border-radius:8px; padding:12px; overflow:auto; max-height:420px; }
+    .good { color:#008a3c; font-weight:600; }
+    .bad { color:#bb1d1d; font-weight:600; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>电商自动化工作流控制台（MVP）</h1>
+    <p class="desc">按从左到右顺序操作：录入产品 → 抓取市场 → 生成内容 → 合规校验 → 回传反馈。</p>
+
+    <div class="grid">
+      <section class="card">
+        <h2>1) 产品输入</h2>
+        <label>产品名</label><input id="product_name" value="智能保温杯" />
+        <label>类目</label><input id="category" value="杯壶" />
+        <label>核心特性（逗号分隔）</label><input id="core_features" value="长效保温,温度显示,食品级材质" />
+        <label>目标人群（逗号分隔）</label><input id="audience" value="上班族,学生" />
+        <label>使用场景（逗号分隔）</label><input id="usage_scenes" value="通勤,办公室" />
+        <label>价格带</label><input id="price_range" value="99-149" />
+        <label>品牌语调</label><input id="brand_tone" value="专业温暖" />
+        <label>平台（逗号分隔）</label><input id="platform" value="taobao,jd,douyin" />
+        <button onclick="createProduct()">提交产品信息</button>
+        <div class="meta">当前 product_id: <span id="product_id">(未创建)</span></div>
+      </section>
+
+      <section class="card">
+        <h2>2) 工作流动作</h2>
+        <div class="line">
+          <button onclick="collectMarket()">抓取市场数据</button>
+          <button onclick="generateContent()">生成内容资产</button>
+          <button onclick="validateContent()">执行合规校验</button>
+          <button class="secondary" onclick="queryRecord()">查询完整记录</button>
+        </div>
+        <hr style="border:none;border-top:1px solid #e5ecf8;margin:14px 0;"/>
+        <label>数据回流：CTR</label><input id="ctr" value="0.12" />
+        <label>转化率</label><input id="conversion_rate" value="0.03" />
+        <label>收藏数</label><input id="favorites" value="30" />
+        <label>退货率</label><input id="return_rate" value="0.01" />
+        <label>差评关键词（逗号分隔）</label><input id="bad_keywords" value="太重,杯盖太紧" />
+        <button onclick="submitFeedback()">提交反馈数据</button>
+      </section>
+
+      <section class="card" style="grid-column:1/-1;">
+        <h2>3) 响应结果</h2>
+        <div id="status"></div>
+        <pre id="output">等待操作...</pre>
+      </section>
+    </div>
+  </div>
+
+<script>
+  const api = '';
+  let currentProductId = '';
+
+  const splitByComma = (v) => v.split(',').map(s => s.trim()).filter(Boolean);
+  const setStatus = (msg, ok=true) => {
+    const el = document.getElementById('status');
+    el.className = ok ? 'good' : 'bad';
+    el.textContent = msg;
+  };
+  const show = (data) => {
+    document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+  };
+
+  function requireId() {
+    if (!currentProductId) {
+      setStatus('请先完成产品输入，生成 product_id。', false);
+      return false;
+    }
+    return true;
+  }
+
+  async function request(path, options={}) {
+    const res = await fetch(api + path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+    });
+    const data = await res.json();
+    if (!res.ok) throw data;
+    return data;
+  }
+
+  async function createProduct() {
+    try {
+      const payload = {
+        product_name: document.getElementById('product_name').value,
+        category: document.getElementById('category').value,
+        core_features: splitByComma(document.getElementById('core_features').value),
+        audience: splitByComma(document.getElementById('audience').value),
+        usage_scenes: splitByComma(document.getElementById('usage_scenes').value),
+        price_range: document.getElementById('price_range').value,
+        brand_tone: document.getElementById('brand_tone').value,
+        platform: splitByComma(document.getElementById('platform').value),
+      };
+      const data = await request('/product/input', { method:'POST', body: JSON.stringify(payload) });
+      currentProductId = data.product_id;
+      document.getElementById('product_id').textContent = currentProductId;
+      setStatus('产品创建成功。');
+      show(data);
+    } catch (e) {
+      setStatus('产品创建失败。', false);
+      show(e);
+    }
+  }
+
+  async function collectMarket() {
+    if (!requireId()) return;
+    try {
+      const data = await request(`/market-data/${currentProductId}/collect`, { method:'POST' });
+      setStatus('市场数据抓取完成。');
+      show(data);
+    } catch (e) {
+      setStatus('市场数据抓取失败。', false);
+      show(e);
+    }
+  }
+
+  async function generateContent() {
+    if (!requireId()) return;
+    try {
+      const data = await request(`/content/${currentProductId}/generate`, { method:'POST' });
+      setStatus('内容资产生成完成。');
+      show(data);
+    } catch (e) {
+      setStatus('内容生成失败。', false);
+      show(e);
+    }
+  }
+
+  async function validateContent() {
+    if (!requireId()) return;
+    try {
+      const data = await request(`/content/${currentProductId}/validate`, { method:'POST' });
+      setStatus('合规检查已完成。');
+      show(data);
+    } catch (e) {
+      setStatus('合规检查失败。', false);
+      show(e);
+    }
+  }
+
+  async function queryRecord() {
+    if (!requireId()) return;
+    try {
+      const data = await request(`/content/${currentProductId}`);
+      setStatus('记录查询成功。');
+      show(data);
+    } catch (e) {
+      setStatus('记录查询失败。', false);
+      show(e);
+    }
+  }
+
+  async function submitFeedback() {
+    if (!requireId()) return;
+    try {
+      const payload = {
+        ctr: Number(document.getElementById('ctr').value),
+        conversion_rate: Number(document.getElementById('conversion_rate').value),
+        favorites: Number(document.getElementById('favorites').value),
+        return_rate: Number(document.getElementById('return_rate').value),
+        bad_review_keywords: splitByComma(document.getElementById('bad_keywords').value),
+      };
+      const data = await request(`/feedback/${currentProductId}`, {
+        method:'POST', body: JSON.stringify(payload)
+      });
+      setStatus('反馈回传成功。');
+      show(data);
+    } catch (e) {
+      setStatus('反馈回传失败。', false);
+      show(e);
+    }
+  }
+</script>
+</body>
+</html>
